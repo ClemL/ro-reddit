@@ -22,6 +22,9 @@ next-env.d.ts
 # vercel
 .vercel
 
+# local exports written by scripts/sync-subreddits.mts
+/results/
+
 # misc
 .DS_Store
 *.pem

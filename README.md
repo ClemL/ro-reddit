@@ -17,6 +17,11 @@ so it needs a Reddit app's credentials:
 | `REDDIT_CLIENT_ID`     | The string under the app name at <https://www.reddit.com/prefs/apps>     |
 | `REDDIT_CLIENT_SECRET` | The `secret` field of the same app                                      |
 
+(`REDDIT_USERNAME` and `REDDIT_PASSWORD` are optional, local-only, and used by
+`npm run sync-subreddits` alone — see [Syncing the list from your
+subscriptions](#syncing-the-list-from-your-subscriptions). The app never reads them; do not set
+them in Vercel.)
+
 Create the app at <https://www.reddit.com/prefs/apps> → **create another app...** → type
 **script** (or **web app**). The redirect URI is unused by the `client_credentials` grant; any
 valid URL, e.g. `http://localhost:3000`, is fine.
@@ -79,6 +84,72 @@ Edit `config/subreddits.json` — that is the whole configuration:
 Names are validated against `^[A-Za-z0-9_]{2,21}$` in `lib/subreddits.ts`; an invalid entry is
 skipped rather than sent to Reddit. Changes take effect on the next build/deploy.
 
+### Syncing the list from your subscriptions
+
+`npm run sync-subreddits` rewrites `config/subreddits.json` from the subreddits **your** Reddit
+account subscribes to, so you can maintain the list on Reddit instead of by hand.
+
+Read this first, because it constrains what is possible:
+
+- **Subscriptions are private to an account.** There is no endpoint that returns a given
+  username's subscriptions. `GET /subreddits/mine/subscriber` returns the subscriptions of
+  whoever owns the *token* — so this only ever reads your own account, and only with your own
+  credentials.
+- **The app-only `client_credentials` token cannot do this.** It has no user context, so the
+  script asks for a user-context token instead, using Reddit's resource-owner grant with
+  `REDDIT_USERNAME` / `REDDIT_PASSWORD`.
+- **That grant requires a `script`-type app** at <https://www.reddit.com/prefs/apps>, owned by
+  (or listing as developer) the same account. Installed and web apps are rejected outright.
+- **The script runs locally, never in production.** The deployed app keeps using the app-only
+  grant and a committed `config/subreddits.json`. Do **not** add `REDDIT_USERNAME` or
+  `REDDIT_PASSWORD` to Vercel — the app has no code path that reads them.
+
+Setup, on top of the two variables the app already needs:
+
+```bash
+# in .env.local (gitignored)
+REDDIT_USERNAME=your_reddit_username
+REDDIT_PASSWORD=your_reddit_password
+```
+
+With two-factor auth enabled, append the current 6-digit code — `REDDIT_PASSWORD=secret:123456`.
+It expires in 30 seconds, so re-run promptly.
+
+Usage (every flag with its default):
+
+```bash
+npm run sync-subreddits -- --dry-run          # print the result, write nothing
+npm run sync-subreddits                        # --limit 0 --sort name --min-subscribers 0
+npm run sync-subreddits -- --limit 25 --sort subscribers --min-subscribers 5000
+npm run sync-subreddits -- --include-nsfw --out config/subreddits.json
+npm run sync-subreddits -- --help
+```
+
+| Flag                    | Default                  | Effect                                              |
+| ----------------------- | ------------------------ | --------------------------------------------------- |
+| `--limit N`             | `0` (all)                | Keep the first N after sorting                      |
+| `--sort name\|subscribers` | `name`                | Order of the written list                           |
+| `--min-subscribers N`   | `0`                      | Drop subreddits smaller than N                      |
+| `--include-nsfw`        | off (NSFW dropped)       | Keep over-18 subreddits                             |
+| `--dry-run`             | off                      | Print only, write nothing                           |
+| `--out PATH`            | `config/subreddits.json` | Config file to rewrite                              |
+
+Entries are dropped, with the reason printed, when they are profile subreddits (`u_*`), fail the
+name validation, are quarantined, or are of a type an app-only token cannot read (private,
+employees-only). Filtering here is what keeps the deployed app from 403-ing on a subreddit only
+*you* can see.
+
+Output: the rewritten `config/subreddits.json`, plus a timestamped audit copy at
+`results/subreddits_yyyyMMdd_HHmm.json` (full resolved path printed on completion) holding the
+subscriber counts and the skip reasons. `results/` is gitignored. Review
+`git diff config/subreddits.json`, then commit and redeploy — the list is a build-time input, so
+nothing changes in production until you do.
+
+Requires Node ≥ 22.6 (the script is TypeScript, run through Node's native type stripping — no
+build step, no extra dependency). The filtering and option rules live in
+`scripts/lib/subreddit-selection.mts`, kept free of credentials and network calls so they can be
+exercised on their own; `npm run typecheck` covers both files.
+
 ## How it works
 
 ```
@@ -91,6 +162,8 @@ app/api/top/route.ts                 route handler → getTopPosts()
 app/api/comments/route.ts            route handler → getPostWithComments()
 lib/reddit.ts                        server-only: token cache, rate limits, Reddit fetches, JSON mapping
 lib/types.ts                         shapes shared by routes and client components (types only)
+scripts/sync-subreddits.mts          local-only CLI: credentials, Reddit calls, files written
+scripts/lib/subreddit-selection.mts  pure option parsing and filtering rules for that CLI
 ```
 
 Every Reddit request happens inside a route handler under `app/api/`. Client components only ever
