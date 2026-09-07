@@ -49,6 +49,11 @@ Both stay visible on `/prefs/apps` afterwards, so a lost secret can be re-read r
 regenerated. Treat the secret like a password: it belongs in `.env.local` and in Vercel's
 environment variables, never in a commit.
 
+**No `secret` shown on the app?** Then it is an *installed app*. That is a public client, so
+Reddit issues no secret for it — the field is absent, not hidden. An app's type cannot be changed
+after creation (the edit form offers only name, description, about url, redirect uri and
+developers), so create a new app with type **script** and delete the old one.
+
 Both are read server-side with `process.env` inside `lib/reddit.ts`, which starts with
 `import "server-only"` — the build fails if that module is ever pulled into a client component, so
 the credentials cannot reach the browser. They are never hardcoded and never sent to the client.
