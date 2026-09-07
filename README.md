@@ -22,9 +22,32 @@ so it needs a Reddit app's credentials:
 subscriptions](#syncing-the-list-from-your-subscriptions). The app never reads them; do not set
 them in Vercel.)
 
-Create the app at <https://www.reddit.com/prefs/apps> → **create another app...** → type
-**script** (or **web app**). The redirect URI is unused by the `client_credentials` grant; any
-valid URL, e.g. `http://localhost:3000`, is fine.
+### Creating the Reddit app
+
+1. Sign in to Reddit as the account that should own the app, then open
+   <https://www.reddit.com/prefs/apps>.
+2. Scroll to the bottom and click **create another app...** (**are you a developer? create an
+   app...** if this is your first).
+3. Fill in the form:
+   - **name** — anything, e.g. `ro-reddit`. It is shown to nobody but you.
+   - **type** — choose **script**. It supports both the `client_credentials` grant this app uses
+     and the user-context grant `npm run sync-subreddits` needs. Do **not** choose *installed
+     app*: that is a public client and is issued **no secret**, so `REDDIT_CLIENT_SECRET` would
+     not exist. *web app* works for the reader but cannot run the sync script.
+   - **description** / **about url** — optional, leave blank.
+   - **redirect uri** — required by the form but unused by both grants. `http://localhost:3000`
+     is fine.
+4. Click **create app**.
+
+The two values then appear on that same page, under the app you just created:
+
+- `REDDIT_CLIENT_ID` — the ~14-character string directly **under the app name**, beneath the
+  label `personal use script`. It is not the app name, and it is not labelled "client id".
+- `REDDIT_CLIENT_SECRET` — the value next to **secret**.
+
+Both stay visible on `/prefs/apps` afterwards, so a lost secret can be re-read rather than
+regenerated. Treat the secret like a password: it belongs in `.env.local` and in Vercel's
+environment variables, never in a commit.
 
 Both are read server-side with `process.env` inside `lib/reddit.ts`, which starts with
 `import "server-only"` — the build fails if that module is ever pulled into a client component, so
